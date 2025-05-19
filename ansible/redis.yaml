@@ -1,0 +1,147 @@
+---
+- name: Setup Redis Cluster with Docker
+  hosts: localhost
+  become: yes
+  tasks:
+    - name: Install required packages
+      yum:
+        name:
+          - docker
+          - python3-pip
+          - python3-setuptools
+        state: present
+
+    - name: Start and enable Docker
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Upgrade pip using package manager
+      yum:
+        name: python3-pip
+        state: latest
+
+    - name: Install Docker SDK using pip without dependencies
+      pip:
+        name: docker
+        state: present
+        extra_args: --no-deps
+
+    - name: Add ec2-user to Docker group
+      user:
+        name: ec2-user
+        groups: docker
+        append: yes
+
+    - name: Tune system parameters
+      blockinfile:
+        path: /etc/sysctl.conf
+        block: |
+          net.core.rmem_max = 134217728
+          net.core.wmem_max = 134217728
+          net.ipv4.tcp_rmem = 4096 87380 134217728
+          net.ipv4.tcp_wmem = 4096 65536 134217728
+          net.core.netdev_max_backlog = 300000
+          net.core.somaxconn = 65535
+          vm.swappiness = 0
+          net.ipv4.tcp_sack = 1
+          net.ipv4.tcp_timestamps = 1
+          net.ipv4.tcp_window_scaling = 1
+          net.ipv4.tcp_congestion_control = cubic
+          net.ipv4.tcp_syncookies = 1
+          net.ipv4.ip_forward = 1
+          net.ipv4.tcp_tw_reuse = 1
+          net.ipv4.tcp_fin_timeout = 15
+
+    - name: Apply sysctl changes
+      command: sysctl -p
+
+    - name: Create directories for Redis data and logs
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0777'
+      loop:
+        - /opt/redis1
+        - /opt/redis2
+        - /opt/redis3
+        - /var/log/redis1
+        - /var/log/redis2
+        - /var/log/redis3
+
+    - name: Check if Redis containers exist and remove them
+      shell: |
+        docker rm -f redis1 redis2 redis3 || true
+      ignore_errors: yes
+  
+    - name: Create Redis cluster using Docker
+      shell: |
+        docker run -d --net=host --restart=unless-stopped --name redis1 -v /opt/redis1:/opt/redis -v /var/log/redis1:/var/log/redis santoshpalla27/redis:latest redis-server /usr/local/etc/redis/redis.conf --port 6379 --requirepass santosh
+        docker run -d --net=host --restart=unless-stopped --name redis2 -v /opt/redis2:/opt/redis -v /var/log/redis2:/var/log/redis santoshpalla27/redis:latest redis-server /usr/local/etc/redis/redis.conf --port 6380 --requirepass santosh
+        docker run -d --net=host --restart=unless-stopped --name redis3 -v /opt/redis3:/opt/redis -v /var/log/redis3:/var/log/redis santoshpalla27/redis:latest redis-server /usr/local/etc/redis/redis.conf --port 6381 --requirepass santosh
+
+    - name: Wait for Redis cluster to start
+      pause:
+        seconds: 10
+
+    - name: Install required Python libraries for AWS
+      pip:
+        name:
+          - boto3
+          - botocore
+        state: present
+      delegate_to: localhost
+      run_once: true
+
+    - name: Fetch all instance private IPs
+      amazon.aws.ec2_instance_info:
+        filters:
+          "tag:Name": "cache*"
+        region: us-east-1  
+      register: ec2_instances
+      delegate_to: localhost
+      run_once: true
+
+    - name: Debug EC2 instance structure
+      debug:
+        var: ec2_instances
+      delegate_to: localhost
+      run_once: true
+      
+    - name: Extract private IPs from instances
+      set_fact:
+        instance_ips: "{{ ec2_instances.instances | json_query('[*].private_ip_address') | select('string') | list }}"
+      when: ec2_instances.instances is defined and ec2_instances.instances | length > 0
+      delegate_to: localhost
+      run_once: true
+
+    - name: Display warning if not enough instances found
+      debug:
+        msg: "Not enough Redis instances found. Need at least 4 instances, but only found {{ instance_ips | length }}."
+      when: instance_ips is defined and instance_ips | length < 4
+      delegate_to: localhost
+      run_once: true
+
+
+    - name: Create Redis Cluster
+      shell: >
+        echo yes | docker run -i --rm --net=host santoshpalla27/redis:latest redis-cli 
+        -a santosh 
+        --cluster create 
+        {{ instance_ips[0] }}:6379 {{ instance_ips[0] }}:6380 {{ instance_ips[0] }}:6381 
+        {{ instance_ips[1] }}:6379 {{ instance_ips[1] }}:6380 {{ instance_ips[1] }}:6381 
+        {{ instance_ips[2] }}:6379 {{ instance_ips[2] }}:6380 {{ instance_ips[2] }}:6381 
+        {{ instance_ips[3] }}:6379 {{ instance_ips[3] }}:6380 {{ instance_ips[3] }}:6381 
+        --cluster-replicas 3
+      delegate_to: localhost
+      run_once: true
+      register: redis_cluster_result
+      when: instance_ips is defined and instance_ips | length >= 4
+
+    - name: Display cluster creation result
+      debug:
+        var: redis_cluster_result.stdout_lines
+      delegate_to: localhost
+      run_once: true
+      when: redis_cluster_result is defined and redis_cluster_result.stdout_lines is defined

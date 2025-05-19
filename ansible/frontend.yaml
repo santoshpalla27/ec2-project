@@ -1,0 +1,98 @@
+---
+- name: Setup frotend nginx with ansible
+  hosts: localhost
+  become: yes
+  tasks:
+    - name: Install required packages
+      yum:
+        name:
+          - git
+          - nginx
+          - python3-pip
+        state: present
+
+    - name: Create directory for nginx web application
+      ansible.builtin.file:
+        path: /usr/share/nginx/html/myapp
+        state: directory
+        mode: '0755'
+        owner: root
+        group: root
+      become: yes
+
+    - name: Clone a GitHub repository
+      ansible.builtin.git:
+        repo: https://github.com/santoshpalla27/ec2-project.git
+        dest: /root/4-tier-project
+        version: main 
+        force: yes
+        clone: yes
+        update: yes  
+
+    - name: Copy multiple files to destination
+      ansible.builtin.copy:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+        owner: "{{ item.owner | default('root') }}"
+        group: "{{ item.group | default('root') }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - { src: '/root/4-tier-project/code/frontend/public/index.html', dest: '/usr/share/nginx/html/myapp/index.html', mode: '0644' }
+        - { src: '/root/4-tier-project/code/frontend/nginx/myapp.conf', dest: '/etc/nginx/conf.d/myapp.conf', mode: '0644' }
+        - { src: '/root/4-tier-project/code/frontend/public/styles.css', dest: '/usr/share/nginx/html/myapp/styles.css', mode: '0640' }
+      become: yes
+
+    
+    - name: Set ownership and permissions for nginx web application directory
+      ansible.builtin.file:
+        path: /usr/share/nginx/html/myapp
+        state: directory
+        owner: nginx
+        group: nginx
+        mode: '0755'
+        recurse: yes
+      become: yes
+
+    - name: Install boto3 and botocore
+      ansible.builtin.pip:
+        name:
+          - boto3
+          - botocore
+        state: present
+      become: yes
+
+    - name: Get backend ALB info
+      amazon.aws.elb_application_lb_info:
+        names:
+          - backend-alb
+        region: us-east-1
+      register: alb_info
+
+    - name: Set backend_url from ALB DNS name
+      ansible.builtin.set_fact:
+        backend_url: "{{ alb_info.load_balancers[0].dns_name }}"
+      when: alb_info.load_balancers | length > 0
+
+    - name: Print backend ALB DNS
+      ansible.builtin.debug:
+        var: backend_url
+
+    - name: Update Nginx configuration variables
+      ansible.builtin.lineinfile:
+        path: /etc/nginx/conf.d/myapp.conf
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+        backrefs: yes
+      loop:
+        - { regexp: 'set \$backend_url "\${BACKEND_URL}";', line: 'set $backend_url "{{ backend_url }}";' }
+        - { regexp: 'set \$environment "\${ENVIRONMENT}";', line: 'set $environment "production";' }
+        - { regexp: 'set \$app_version "\${APP_VERSION}";', line: 'set $app_version "1.0.1";' }
+      become: yes
+          
+    - name: Restart Nginx and enable on boot
+      ansible.builtin.systemd:
+        name: nginx
+        state: restarted
+        enabled: yes
+      become: yes
+        

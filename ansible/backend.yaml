@@ -1,0 +1,137 @@
+---
+- name: Setup frotend nginx with ansible
+  hosts: localhost
+  become: yes
+  tasks:
+    - name: Download and run NodeSource setup script
+      shell: curl -sL https://rpm.nodesource.com/setup_20.x | bash -
+    
+    - name: Install required packages
+      yum:
+        name:
+          - nodejs
+          - git
+          - python3-pip
+        state: present
+
+    - name: Clone a GitHub repository
+      ansible.builtin.git:
+        repo: https://github.com/santoshpalla27/ec2-project.git
+        dest: /root/4-tier-project
+        force: yes
+        version: main 
+        clone: yes
+        update: yes  
+
+    - name: Query RDS database instances
+      shell: >
+        aws rds describe-db-instances 
+        --query 'DBInstances[?starts_with(DBInstanceIdentifier, `database`)].{InstanceID:DBInstanceIdentifier,Endpoint:Endpoint.Address}' 
+        --output json
+      register: rds_output
+
+    - name: Parse RDS output
+      set_fact:
+        rds_instances: "{{ rds_output.stdout | from_json }}"
+      when: rds_output.stdout is defined and rds_output.stdout != ""
+      
+    - name: Set RDS endpoint as fact
+      set_fact:
+        db_endpoint: "{{ rds_instances[0].Endpoint }}"
+      when: rds_instances is defined and rds_instances | length > 0
+
+    - name: Display RDS endpoint
+      debug:
+        msg: "Database endpoint: {{ db_endpoint }}"
+      when: db_endpoint is defined
+
+    - name: Install boto3 and botocore
+      ansible.builtin.pip:
+        name:
+          - boto3
+          - botocore
+        state: present
+      become: yes
+     
+    - name: Fetch all instance private IPs
+      amazon.aws.ec2_instance_info:
+        filters:
+          "tag:Name": "cache*"
+        region: us-east-1  
+      register: ec2_instances
+      delegate_to: localhost
+      run_once: true
+
+    - name: Debug EC2 instance structure
+      debug:
+        var: ec2_instances
+      delegate_to: localhost
+      run_once: true
+      
+    - name: Extract private IPs from instances
+      set_fact:
+        instance_ips: "{{ ec2_instances.instances | json_query('[*].private_ip_address') | select('string') | list }}"
+      when: ec2_instances.instances is defined and ec2_instances.instances | length > 0
+      delegate_to: localhost
+      run_once: true
+
+
+    - name: Extract private IPs from instances
+      set_fact:
+        redis_hosts: "{{ instance_ips[0] }}:6379,{{ instance_ips[1] }}:6379,{{ instance_ips[2] }}:6379,{{ instance_ips[3] }}:6379"
+      delegate_to: localhost
+      run_once: true
+
+    
+    - name: Update DB_HOST in .env file
+      ansible.builtin.shell: >
+        sed -i 's|^DB_HOST=.*|DB_HOST={{ db_endpoint }}|' /root/4-tier-project/code/backend/.env
+      when: db_endpoint is defined
+
+    - name: Update REDIS_HOST in .env file
+      ansible.builtin.shell: >
+        sed -i 's|^REDIS_NODES=.*|REDIS_NODES={{ redis_hosts }}|' /root/4-tier-project/code/backend/.env
+      when: redis_hosts is defined
+
+    - name: Run npm install in backend directory
+      shell: npm install
+      args:
+        chdir: /root/4-tier-project/code/backend
+
+    - name: Run npm install in backend directory
+      shell: sudo npm install -g pm2
+      args:
+        chdir: /root/4-tier-project/code/backend
+
+    - name: Setup PM2 startup script
+      shell: |
+        pm2 startup
+        env PATH=$PATH:/usr/bin pm2 startup systemd -u ec2-user --hp /home/ec2-user
+      args:
+        chdir: /root/4-tier-project/code/backend
+
+
+    - name: Check if backend app is already running
+      shell: pm2 list | grep -w "backend"
+      args:
+        chdir: /root/4-tier-project/code/backend
+      register: pm2_check
+      ignore_errors: yes
+
+    - name: Stop the existing backend app if running
+      shell: pm2 stop backend
+      args:
+        chdir: /root/4-tier-project/code/backend
+      when: pm2_check.rc == 0
+      ignore_errors: yes
+
+    - name: Start application with PM2
+      shell: pm2 start app.js --name "backend"
+      args:
+        chdir: /root/4-tier-project/code/backend
+        
+    - name: Save PM2 configuration
+      shell: pm2 save
+      args:
+        chdir: /root/4-tier-project/code/backend
+      
