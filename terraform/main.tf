@@ -4,12 +4,12 @@ provider "aws" {
 # VPC
 module "vpc" {
   source = "./vpc"
-  vpc_name = "4-tier-project"
+  vpc_name = "ec2-project"
   cidr_block = "10.0.0.0/16"
   tags = {
-    Name = "4-tier-project"
+    Name = "ec2-project"
     Environment = "dev"
-    Project = "4-tier-project"
+    Project = "ec2-project"
   }
   region = "us-east-1"
   public_subnets = [ "10.0.1.0/24" , "10.0.2.0/24","10.0.3.0/24" , "10.0.4.0/24" ]
@@ -59,7 +59,7 @@ module "frontend-sg" {
   tags = {
     name = "frontend-sg"
     environment = "dev"
-    project = "4-tier-project"
+    project = "ec2-project"
   }
 }
 # Security group for backend EC2 instance
@@ -95,7 +95,7 @@ module "backend-sg" {
   tags = {
     name = "backend-sg"
     environment = "dev"
-    project = "4-tier-project"
+    project = "ec2-project"
   }
 }
 # Security group for database
@@ -124,7 +124,7 @@ module "db_sg" {
   tags = {
     name = "rds-sg"
     environment = "dev"
-    project = "4-tier-project"
+    project = "ec2-project"
   }
 }
 # Security group for cache EC2 instance
@@ -167,7 +167,7 @@ module "cache-sg" {
   tags = {
     name = "cache-sg"
     environment = "dev"
-    project = "4-tier-project"
+    project = "ec2-project"
   }
 }
 # IAM Role for EC2 to describe EC2 instances
@@ -304,7 +304,7 @@ module "frontend-asg"{
               #!/bin/bash
               sudo yum install ansible git -y
               git clone https://github.com/santoshpalla27/ec2-project.git
-              cd 4-tier-project/ansible
+              cd ec2-project/ansible
               /usr/bin/ansible-playbook frontend.yaml
               EOF
               )
@@ -386,7 +386,7 @@ module "backend-asg"{
               #!/bin/bash
               sudo yum install ansible git -y
               git clone https://github.com/santoshpalla27/ec2-project.git
-              cd 4-tier-project/ansible
+              cd ec2-project/ansible
               /usr/bin/ansible-playbook backend.yaml 
               EOF
   )
@@ -427,7 +427,7 @@ module "cache-ec2" {
               #!/bin/bash
               sudo yum install ansible git -y
               git clone https://github.com/santoshpalla27/ec2-project.git
-              cd 4-tier-project/ansible
+              cd ec2-project/ansible
               /usr/bin/ansible-playbook redis.yaml
               EOF
 }
