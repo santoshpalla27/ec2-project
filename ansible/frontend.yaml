@@ -23,7 +23,7 @@
     - name: Clone a GitHub repository
       ansible.builtin.git:
         repo: https://github.com/santoshpalla27/ec2-project.git
-        dest: /root/4-tier-project
+        dest: /root/ec2-project
         version: main 
         force: yes
         clone: yes
@@ -37,9 +37,9 @@
         group: "{{ item.group | default('root') }}"
         mode: "{{ item.mode }}"
       loop:
-        - { src: '/root/4-tier-project/code/frontend/public/index.html', dest: '/usr/share/nginx/html/myapp/index.html', mode: '0644' }
-        - { src: '/root/4-tier-project/code/frontend/nginx/myapp.conf', dest: '/etc/nginx/conf.d/myapp.conf', mode: '0644' }
-        - { src: '/root/4-tier-project/code/frontend/public/styles.css', dest: '/usr/share/nginx/html/myapp/styles.css', mode: '0640' }
+        - { src: '/root/ec2-project/code/frontend/public/index.html', dest: '/usr/share/nginx/html/myapp/index.html', mode: '0644' }
+        - { src: '/root/ec2-project/code/frontend/nginx/myapp.conf', dest: '/etc/nginx/conf.d/myapp.conf', mode: '0644' }
+        - { src: '/root/ec2-project/code/frontend/public/styles.css', dest: '/usr/share/nginx/html/myapp/styles.css', mode: '0640' }
       become: yes
 
     

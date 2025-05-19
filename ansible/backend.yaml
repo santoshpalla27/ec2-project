@@ -17,7 +17,7 @@
     - name: Clone a GitHub repository
       ansible.builtin.git:
         repo: https://github.com/santoshpalla27/ec2-project.git
-        dest: /root/4-tier-project
+        dest: /root/ec2-project
         force: yes
         version: main 
         clone: yes
@@ -85,53 +85,53 @@
     
     - name: Update DB_HOST in .env file
       ansible.builtin.shell: >
-        sed -i 's|^DB_HOST=.*|DB_HOST={{ db_endpoint }}|' /root/4-tier-project/code/backend/.env
+        sed -i 's|^DB_HOST=.*|DB_HOST={{ db_endpoint }}|' /root/ec2-project/code/backend/.env
       when: db_endpoint is defined
 
     - name: Update REDIS_HOST in .env file
       ansible.builtin.shell: >
-        sed -i 's|^REDIS_NODES=.*|REDIS_NODES={{ redis_hosts }}|' /root/4-tier-project/code/backend/.env
+        sed -i 's|^REDIS_NODES=.*|REDIS_NODES={{ redis_hosts }}|' /root/ec2-project/code/backend/.env
       when: redis_hosts is defined
 
     - name: Run npm install in backend directory
       shell: npm install
       args:
-        chdir: /root/4-tier-project/code/backend
+        chdir: /root/ec2-project/code/backend
 
     - name: Run npm install in backend directory
       shell: sudo npm install -g pm2
       args:
-        chdir: /root/4-tier-project/code/backend
+        chdir: /root/ec2-project/code/backend
 
     - name: Setup PM2 startup script
       shell: |
         pm2 startup
         env PATH=$PATH:/usr/bin pm2 startup systemd -u ec2-user --hp /home/ec2-user
       args:
-        chdir: /root/4-tier-project/code/backend
+        chdir: /root/ec2-project/code/backend
 
 
     - name: Check if backend app is already running
       shell: pm2 list | grep -w "backend"
       args:
-        chdir: /root/4-tier-project/code/backend
+        chdir: /root/ec2-project/code/backend
       register: pm2_check
       ignore_errors: yes
 
     - name: Stop the existing backend app if running
       shell: pm2 stop backend
       args:
-        chdir: /root/4-tier-project/code/backend
+        chdir: /root/ec2-project/code/backend
       when: pm2_check.rc == 0
       ignore_errors: yes
 
     - name: Start application with PM2
       shell: pm2 start app.js --name "backend"
       args:
-        chdir: /root/4-tier-project/code/backend
+        chdir: /root/ec2-project/code/backend
         
     - name: Save PM2 configuration
       shell: pm2 save
       args:
-        chdir: /root/4-tier-project/code/backend
+        chdir: /root/ec2-project/code/backend
       
