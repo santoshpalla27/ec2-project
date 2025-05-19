@@ -303,7 +303,7 @@ module "frontend-asg"{
   user_data = base64encode(<<-EOF
               #!/bin/bash
               sudo yum install ansible git -y
-              git clone https://github.com/santoshpalla27/4-tier-project.git
+              git clone https://github.com/santoshpalla27/ec2-project.git
               cd 4-tier-project/ansible
               /usr/bin/ansible-playbook frontend.yaml
               EOF
@@ -385,7 +385,7 @@ module "backend-asg"{
   user_data = base64encode(<<-EOF
               #!/bin/bash
               sudo yum install ansible git -y
-              git clone https://github.com/santoshpalla27/4-tier-project.git
+              git clone https://github.com/santoshpalla27/ec2-project.git
               cd 4-tier-project/ansible
               /usr/bin/ansible-playbook backend.yaml 
               EOF
@@ -426,7 +426,7 @@ module "cache-ec2" {
   user_data = <<-EOF
               #!/bin/bash
               sudo yum install ansible git -y
-              git clone https://github.com/santoshpalla27/4-tier-project.git
+              git clone https://github.com/santoshpalla27/ec2-project.git
               cd 4-tier-project/ansible
               /usr/bin/ansible-playbook redis.yaml
               EOF
