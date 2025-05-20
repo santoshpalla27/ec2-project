@@ -137,7 +137,10 @@
       delegate_to: localhost
       run_once: true
       register: redis_cluster_result
-      when: instance_ips is defined and instance_ips | length >= 4
+      when: 
+        - instance_ips is defined 
+        - instance_ips | length >= 4
+        - instance_id.content == instance_ips[-1]  # Only the last instance by IP runs this
 
     - name: Display cluster creation result
       debug:

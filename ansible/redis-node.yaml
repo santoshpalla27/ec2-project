@@ -1,0 +1,82 @@
+---
+- name: Setup Redis Node with Docker
+  hosts: localhost
+  become: yes
+  tasks:
+    - name: Install required packages
+      yum:
+        name:
+          - docker
+          - python3-pip
+          - python3-setuptools
+        state: present
+
+    - name: Start and enable Docker
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Upgrade pip using package manager
+      yum:
+        name: python3-pip
+        state: latest
+
+    - name: Install Docker SDK using pip without dependencies
+      pip:
+        name: docker
+        state: present
+        extra_args: --no-deps
+
+    - name: Add ec2-user to Docker group
+      user:
+        name: ec2-user
+        groups: docker
+        append: yes
+
+    - name: Tune system parameters
+      blockinfile:
+        path: /etc/sysctl.conf
+        block: |
+          net.core.rmem_max = 134217728
+          net.core.wmem_max = 134217728
+          net.ipv4.tcp_rmem = 4096 87380 134217728
+          net.ipv4.tcp_wmem = 4096 65536 134217728
+          net.core.netdev_max_backlog = 300000
+          net.core.somaxconn = 65535
+          vm.swappiness = 0
+          net.ipv4.tcp_sack = 1
+          net.ipv4.tcp_timestamps = 1
+          net.ipv4.tcp_window_scaling = 1
+          net.ipv4.tcp_congestion_control = cubic
+          net.ipv4.tcp_syncookies = 1
+          net.ipv4.ip_forward = 1
+          net.ipv4.tcp_tw_reuse = 1
+          net.ipv4.tcp_fin_timeout = 15
+
+    - name: Apply sysctl changes
+      command: sysctl -p
+
+    - name: Create directories for Redis data and logs
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0777'
+      loop:
+        - /opt/redis1
+        - /opt/redis2
+        - /opt/redis3
+        - /var/log/redis1
+        - /var/log/redis2
+        - /var/log/redis3
+
+    - name: Check if Redis containers exist and remove them
+      shell: |
+        docker rm -f redis1 redis2 redis3 || true
+      ignore_errors: yes
+  
+    - name: Create Redis cluster using Docker
+      shell: |
+        docker run -d --net=host --restart=unless-stopped --name redis1 -v /opt/redis1:/opt/redis -v /var/log/redis1:/var/log/redis santoshpalla27/redis:latest redis-server /usr/local/etc/redis/redis.conf --port 6379 --requirepass santosh
+        docker run -d --net=host --restart=unless-stopped --name redis2 -v /opt/redis2:/opt/redis -v /var/log/redis2:/var/log/redis santoshpalla27/redis:latest redis-server /usr/local/etc/redis/redis.conf --port 6380 --requirepass santosh
+        docker run -d --net=host --restart=unless-stopped --name redis3 -v /opt/redis3:/opt/redis -v /var/log/redis3:/var/log/redis santoshpalla27/redis:latest redis-server /usr/local/etc/redis/redis.conf --port 6381 --requirepass santosh

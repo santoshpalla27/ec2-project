@@ -1,0 +1,63 @@
+---
+- name: Create Redis Cluster
+  hosts: localhost
+  become: yes
+  tasks:
+    - name: Install required Python libraries for AWS
+      pip:
+        name:
+          - boto3
+          - botocore
+        state: present
+
+    - name: Fetch all instance private IPs
+      amazon.aws.ec2_instance_info:
+        filters:
+          "tag:Name": "cache*"
+        region: us-east-1  
+      register: ec2_instances
+
+    - name: Extract private IPs from instances
+      set_fact:
+        instance_ips: "{{ ec2_instances.instances | json_query('[*].private_ip_address') | select('string') | list }}"
+      when: ec2_instances.instances is defined and ec2_instances.instances | length > 0
+
+    - name: Display warning if not enough instances found
+      debug:
+        msg: "Not enough Redis instances found. Need at least 4 instances, but only found {{ instance_ips | length }}."
+      when: instance_ips is defined and instance_ips | length < 4
+
+    # Reset the cluster nodes first to avoid "node not empty" error
+    - name: Reset local Redis cluster configurations
+      shell: |
+        docker exec redis1 redis-cli -a santosh FLUSHALL
+        docker exec redis1 redis-cli -a santosh CLUSTER RESET
+        docker exec redis2 redis-cli -a santosh FLUSHALL
+        docker exec redis2 redis-cli -a santosh CLUSTER RESET
+        docker exec redis3 redis-cli -a santosh FLUSHALL
+        docker exec redis3 redis-cli -a santosh CLUSTER RESET
+      ignore_errors: yes
+      when: instance_ips is defined and instance_ips | length >= 4
+
+    - name: Wait after reset
+      pause:
+        seconds: 5
+      when: instance_ips is defined and instance_ips | length >= 4
+
+    - name: Create Redis Cluster
+      shell: >
+        echo yes | docker run -i --rm --net=host santoshpalla27/redis:latest redis-cli 
+        -a santosh 
+        --cluster create 
+        {{ instance_ips[0] }}:6379 {{ instance_ips[0] }}:6380 {{ instance_ips[0] }}:6381 
+        {{ instance_ips[1] }}:6379 {{ instance_ips[1] }}:6380 {{ instance_ips[1] }}:6381 
+        {{ instance_ips[2] }}:6379 {{ instance_ips[2] }}:6380 {{ instance_ips[2] }}:6381 
+        {{ instance_ips[3] }}:6379 {{ instance_ips[3] }}:6380 {{ instance_ips[3] }}:6381 
+        --cluster-replicas 3
+      register: redis_cluster_result
+      when: instance_ips is defined and instance_ips | length >= 4
+
+    - name: Display cluster creation result
+      debug:
+        var: redis_cluster_result.stdout_lines
+      when: redis_cluster_result is defined and redis_cluster_result.stdout_lines is defined
