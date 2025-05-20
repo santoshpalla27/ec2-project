@@ -428,18 +428,7 @@ module "cache-ec2" {
               sudo yum install ansible git -y
               git clone https://github.com/santoshpalla27/ec2-project.git
               cd ec2-project/ansible
-              
-              # First, run the playbook that sets up Redis on all instances
-              # This should be a modified version of your current playbook that excludes the cluster creation step
-              /usr/bin/ansible-playbook redis-node.yaml
-              
-              # Only last instance creates the cluster
-              if [[ $(hostname) == *"cache3"* ]]; then
-                # Wait for other instances to start their Redis containers
-                sleep 60
-                # This should be a new playbook that only does the cluster creation step
-                /usr/bin/ansible-playbook redis-cluster.yaml
-              fi
+              /usr/bin/ansible-playbook redis.yaml
               EOF
 }
 
